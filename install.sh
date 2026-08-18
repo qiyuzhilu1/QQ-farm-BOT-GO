@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-#  QQ Farm Bot GO 一键部署脚本
+#  QQ Farm Bot GO 一键部署脚本（优化版）
 #
 #  用法:  sudo bash install.sh
 #
@@ -14,20 +14,42 @@
 # ============================================================
 set -e
 
+# ==========【核心优化：强制优先加载手动安装的Go】==========
+export PATH="/usr/local/go/bin:$PATH"
+# ==========================================================
+
 cd "$(dirname "$0")"
 SRC="$(pwd)"
 DES=/opt/go-farm-bot
 
 echo "=========================================="
-echo " QQ Farm Bot GO 一键部署"
+echo " QQ Farm Bot GO 一键部署【优化版】"
 echo "=========================================="
+
+# ---- 校验Go环境 & 最低版本要求 ----
+GO_CMD=$(command -v go || true)
+if [[ -z "${GO_CMD}" ]]; then
+  echo "ERROR: 未检测到 Go，请先手动安装 Go 1.21 及以上版本！"
+  exit 1
+fi
+
+GO_VER=$(go version | awk '{print $3}' | sed 's/go//')
+MIN_VER="1.21.0"
+if ! printf '%s\n%s\n' "$MIN_VER" "$GO_VER" | sort -V -C; then
+  echo "ERROR: 当前Go版本 go${GO_VER}，本项目最低要求 Go 1.21！"
+  exit 1
+fi
+echo "✅ 检测到有效 Go 版本: go${GO_VER}"
 
 # ---- 1. 构建前端（强制，不复用旧产物） ----
 echo "[1/5] 构建前端..."
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
   echo "  未检测到 Node.js，尝试自动安装..."
   sudo apt-get update -y >/dev/null 2>&1 || true
-  sudo apt-get install -y nodejs npm >/dev/null 2>&1 || { echo "Node.js 安装失败，无法构建前端"; exit 1; }
+  sudo apt-get install -y nodejs npm >/dev/null 2>&1 || {
+    echo "Node.js 安装失败，无法构建前端";
+    exit 1;
+  }
 fi
 cd "$SRC/web"
 npm ci >/dev/null 2>&1 || npm install >/dev/null 2>&1
@@ -36,13 +58,9 @@ cd "$SRC"
 
 # ---- 2. 编译后端程序（每次都重新编译，确保 embed 的就是刚构建的前端） ----
 echo "[2/5] 编译程序..."
-if ! command -v go >/dev/null 2>&1; then
-  echo "  未检测到 Go，尝试自动安装..."
-  sudo apt-get update -y >/dev/null 2>&1 || true
-  sudo apt-get install -y golang-go >/dev/null 2>&1
-fi
 go build -o go-farm-bot .
 BIN="$SRC/go-farm-bot"
+echo "✅ 后端编译完成"
 
 # ---- 3. 安装程序 + 图片素材 ----
 echo "[3/5] 安装程序与素材到 $DES ..."
